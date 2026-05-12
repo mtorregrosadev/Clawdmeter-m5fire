@@ -32,20 +32,6 @@ static void seed_demo_data(void) {
     }
 }
 
-static void seed_demo_data_variant(void) {
-    static int idx = 0;
-    const char* demos[] = {
-        "{\"s\":12,\"sr\":280,\"w\":9,\"wr\":6200,\"st\":\"allowed\",\"ok\":true}",
-        "{\"s\":45,\"sr\":121,\"w\":28,\"wr\":3920,\"st\":\"allowed\",\"ok\":true}",
-        "{\"s\":82,\"sr\":47,\"w\":61,\"wr\":1440,\"st\":\"warning\",\"ok\":true}"
-    };
-    idx = (idx + 1) % 3;
-    if (parse_json(demos[idx], &usage)) {
-        usage_rate_sample(usage.session_pct);
-        ui_update(&usage);
-    }
-}
-
 static void poll_serial_usage() {
     static char line[256];
     static size_t pos = 0;
@@ -104,7 +90,6 @@ void loop() {
         else ui_cycle_screen();
     }
     if (M5.BtnC.wasPressed()) {
-        seed_demo_data_variant();
         if (splash_is_active()) splash_pick_for_current_rate();
     }
 
