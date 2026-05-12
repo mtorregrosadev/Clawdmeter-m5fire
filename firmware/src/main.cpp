@@ -69,7 +69,7 @@ void setup() {
     ui_init();
     ui_update_ble_status(FIRE_LINK_UNUSED, nullptr, nullptr);
     ui_update_battery(power_battery_pct(), power_is_charging());
-    ui_show_screen(SCREEN_USAGE);
+    ui_show_screen(SCREEN_SPLASH);
     seed_demo_data();
     Serial.println("{\"ready\":true}");
 }
@@ -91,6 +91,7 @@ void loop() {
     }
     if (M5.BtnC.wasPressed()) {
         if (splash_is_active()) splash_pick_for_current_rate();
+        else if (ui_get_current_screen() == SCREEN_GALLERY) ui_cycle_gallery_visual();
     }
 
     static int last_pct = -2;

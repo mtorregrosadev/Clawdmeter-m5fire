@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "clawd_assets.h"
 #include "splash.h"
 #include "theme.h"
 #include <M5Unified.h>
@@ -10,7 +11,7 @@ static UsageData current_data = {};
 static int battery_percent = -1;
 static bool battery_charging = false;
 static uint32_t anim_last_ms = 0;
-static uint8_t anim_msg_idx = 0;
+static uint8_t gallery_idx = 0;
 
 static const char* const kFooterText = "* mtorregrosadev...";
 
@@ -138,7 +139,25 @@ static void draw_system_screen(void) {
     M5.Display.drawString(current_data.ok ? current_data.status : "waiting for data", 24, 110);
     M5.Display.drawString("A splash", 24, 142);
     M5.Display.drawString("B screen", 24, 162);
-    M5.Display.drawString("C refresh", 24, 182);
+    M5.Display.drawString("C refresh data", 24, 182);
+}
+
+static void draw_gallery_screen(void) {
+    const ClawdPosterAsset& poster = kClawdGalleryPosters[gallery_idx % kClawdGalleryPosterCount];
+    const int16_t x = (M5.Display.width() - poster.width) / 2;
+    const int16_t y = 44;
+
+    M5.Display.fillScreen(color565(THEME_BG));
+    draw_header("Clawd Gallery");
+    M5.Display.fillRoundRect(30, 38, 260, 180, 16, color565(THEME_PANEL));
+    M5.Display.pushImage(x, y, poster.width, poster.height, poster.pixels);
+    M5.Display.setTextColor(color565(THEME_TEXT), color565(THEME_PANEL));
+    M5.Display.setTextDatum(bottom_center);
+    M5.Display.drawString(poster.name, 160, 208);
+    set_font_footer();
+    M5.Display.setTextColor(color565(THEME_DIM), color565(THEME_BG));
+    M5.Display.setTextDatum(bottom_center);
+    M5.Display.drawString("Auto-rotates every 4s", 160, 234);
 }
 
 static void redraw(void) {
@@ -149,6 +168,10 @@ static void redraw(void) {
         case SCREEN_USAGE:
             splash_hide();
             draw_usage_screen();
+            break;
+        case SCREEN_GALLERY:
+            splash_hide();
+            draw_gallery_screen();
             break;
         case SCREEN_BLUETOOTH:
             splash_hide();
@@ -171,18 +194,42 @@ void ui_update(const UsageData* data) {
 }
 
 void ui_tick_anim(void) {
-    (void)anim_last_ms;
+    if (current_screen != SCREEN_GALLERY) return;
+    uint32_t now = millis();
+    if (now - anim_last_ms < 4000) return;
+    anim_last_ms = now;
+    gallery_idx = (gallery_idx + 1) % kClawdGalleryPosterCount;
+    draw_gallery_screen();
 }
 
 void ui_show_screen(screen_t screen) {
     if (screen != SCREEN_SPLASH) prev_non_splash_screen = screen;
     current_screen = screen;
+    if (screen == SCREEN_GALLERY) anim_last_ms = millis();
     redraw();
 }
 
 void ui_cycle_screen(void) {
-    screen_t next = (current_screen == SCREEN_USAGE) ? SCREEN_BLUETOOTH : SCREEN_USAGE;
+    screen_t next = SCREEN_USAGE;
+    switch (current_screen) {
+        case SCREEN_USAGE:
+            next = SCREEN_GALLERY;
+            break;
+        case SCREEN_GALLERY:
+            next = SCREEN_BLUETOOTH;
+            break;
+        case SCREEN_BLUETOOTH:
+        default:
+            next = SCREEN_USAGE;
+            break;
+    }
     ui_show_screen(next);
+}
+
+void ui_cycle_gallery_visual(void) {
+    gallery_idx = (gallery_idx + 1) % kClawdGalleryPosterCount;
+    anim_last_ms = millis();
+    if (current_screen == SCREEN_GALLERY) draw_gallery_screen();
 }
 
 void ui_toggle_splash(void) {
