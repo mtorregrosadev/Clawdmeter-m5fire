@@ -1,6 +1,9 @@
 #pragma once
 #include "data.h"
-#include "ble.h"
+
+enum fire_link_state_t {
+    FIRE_LINK_UNUSED = 0,
+};
 
 enum screen_t {
     SCREEN_SPLASH,
@@ -16,5 +19,5 @@ void ui_show_screen(screen_t screen);
 void ui_cycle_screen(void);
 void ui_toggle_splash(void);
 screen_t ui_get_current_screen(void);
-void ui_update_ble_status(ble_state_t state, const char* name, const char* mac);
+void ui_update_ble_status(fire_link_state_t state, const char* name, const char* mac);
 void ui_update_battery(int percent, bool charging);
