@@ -7,6 +7,7 @@
 #include "imu.h"
 #include "splash.h"
 #include "usage_rate.h"
+#include "leds.h"
 
 static UsageData usage = {};
 
@@ -25,7 +26,8 @@ static bool parse_json(const char* json, UsageData* out) {
 }
 
 static void seed_demo_data(void) {
-    const char* demo = "{\"s\":45,\"sr\":121,\"w\":28,\"wr\":3920,\"st\":\"allowed\",\"ok\":true}";
+    // Demo: 45% used, 2h 45m remaining (165 min), 28% used, 5d 2h remaining (7320 min)
+    const char* demo = "{\"s\":45,\"sr\":165,\"w\":28,\"wr\":7320,\"st\":\"demo\",\"ok\":true}";
     if (parse_json(demo, &usage)) {
         usage_rate_sample(usage.session_pct);
         ui_update(&usage);
@@ -47,7 +49,10 @@ static void poll_serial_usage() {
                     usage = incoming;
                     usage_rate_sample(usage.session_pct);
                     ui_update(&usage);
+                    led_set(LED_ORANGE);
                     Serial.println("{\"ack\":true}");
+                } else {
+                    led_set(LED_RED_BLINK);
                 }
             }
             pos = 0;
@@ -67,6 +72,7 @@ void setup() {
 
     splash_init();
     ui_init();
+    led_init();
     ui_update_ble_status(FIRE_LINK_UNUSED, nullptr, nullptr);
     ui_update_battery(power_battery_pct(), power_is_charging());
     ui_show_screen(SCREEN_SPLASH);
@@ -80,6 +86,7 @@ void loop() {
     power_tick();
     imu_tick();
     splash_tick();
+    led_tick();
     poll_serial_usage();
 
     if (M5.BtnA.wasPressed()) {
@@ -92,6 +99,11 @@ void loop() {
     if (M5.BtnC.wasPressed()) {
         if (splash_is_active()) splash_pick_for_current_rate();
         else if (ui_get_current_screen() == SCREEN_GALLERY) ui_cycle_gallery_visual();
+        else if (ui_get_current_screen() == SCREEN_USAGE) {
+            // Request immediate scraper refresh
+            Serial.println("{\"cmd\":\"refresh\"}");
+            led_set(LED_ORANGE);
+        }
     }
 
     static int last_pct = -2;

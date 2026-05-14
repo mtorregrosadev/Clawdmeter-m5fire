@@ -2,6 +2,7 @@
 #include "clawd_assets.h"
 #include "splash.h"
 #include "theme.h"
+#include "logo.h"
 #include <M5Unified.h>
 #include <math.h>
 
@@ -47,18 +48,7 @@ static void draw_bar(int x, int y, int w, int h, int pct, uint16_t fill) {
 }
 
 static void draw_logo() {
-    uint16_t c = color565(THEME_ACCENT);
-    uint16_t bg = color565(THEME_BG);
-    int ox = 26, oy = 22;
-    M5.Display.fillRect(ox + 4, oy, 18, 4, c);
-    M5.Display.fillRect(ox, oy + 4, 26, 14, c);
-    M5.Display.fillRect(ox - 2, oy + 11, 4, 5, c);
-    M5.Display.fillRect(ox + 24, oy + 11, 4, 5, c);
-    M5.Display.fillRect(ox + 5, oy + 18, 3, 6, c);
-    M5.Display.fillRect(ox + 11, oy + 18, 3, 6, c);
-    M5.Display.fillRect(ox + 17, oy + 18, 3, 6, c);
-    M5.Display.fillRect(ox + 7, oy + 7, 2, 5, bg);
-    M5.Display.fillRect(ox + 15, oy + 7, 2, 5, bg);
+    M5.Display.pushImage(14, 10, 32, 32, kClawdLogo_pixels);
 }
 
 static void draw_battery(void) {

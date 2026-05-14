@@ -11,3 +11,4 @@ firmware/.vscode/
 # Node tooling deps (npm install --no-save)
 tools/node_modules/
 tools/package-lock.json
+/firmware/__pycache__
