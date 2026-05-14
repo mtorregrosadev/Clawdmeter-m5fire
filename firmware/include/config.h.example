@@ -1,0 +1,7 @@
+#pragma once
+
+// Copy this file to config.h and customize for your setup
+
+// Daemon IP and port (where your Mac HTTP server is running)
+#define DAEMON_IP "192.168.1.105"
+#define DAEMON_PORT "80"

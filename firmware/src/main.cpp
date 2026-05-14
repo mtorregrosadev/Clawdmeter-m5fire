@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <M5Unified.h>
 #include <ArduinoJson.h>
+#include "config.h"
 #include "data.h"
 #include "ui.h"
 #include "power.h"
@@ -8,8 +9,14 @@
 #include "splash.h"
 #include "usage_rate.h"
 #include "leds.h"
+#include "wifi.h"
+#include "http_client.h"
 
 static UsageData usage = {};
+static uint32_t last_poll_ms = 0;
+static uint32_t force_poll_at_ms = 0;  // Force poll at specific time
+static const uint32_t POLL_INTERVAL_MS = 30000; // 30 seconds
+static const uint32_t DAEMON_SCRAPE_DELAY_MS = 2500; // Wait for daemon to scrape
 
 static bool parse_json(const char* json, UsageData* out) {
     JsonDocument doc;
@@ -34,31 +41,33 @@ static void seed_demo_data(void) {
     }
 }
 
-static void poll_serial_usage() {
-    static char line[256];
-    static size_t pos = 0;
+static void poll_wifi_usage() {
+    uint32_t now = millis();
+    bool force_poll = (force_poll_at_ms > 0 && now >= force_poll_at_ms);
+    bool regular_poll = (now - last_poll_ms >= POLL_INTERVAL_MS);
 
-    while (Serial.available()) {
-        char c = (char)Serial.read();
-        if (c == '\r') continue;
-        if (c == '\n') {
-            line[pos] = '\0';
-            if (pos > 0) {
-                UsageData incoming = usage;
-                if (parse_json(line, &incoming)) {
-                    usage = incoming;
-                    usage_rate_sample(usage.session_pct);
-                    ui_update(&usage);
-                    led_set(LED_ORANGE);
-                    Serial.println("{\"ack\":true}");
-                } else {
-                    led_set(LED_RED_BLINK);
-                }
-            }
-            pos = 0;
-        } else if (pos < sizeof(line) - 1) {
-            line[pos++] = c;
-        }
+    if (!force_poll && !regular_poll) return;
+
+    if (!http_client_is_connected()) {
+        Serial.println("DEBUG: Not connected to WiFi, skipping poll");
+        return;
+    }
+
+    last_poll_ms = now;
+    force_poll_at_ms = 0;  // Clear forced poll
+    Serial.println("DEBUG: Polling usage from API...");
+
+    UsageData incoming = usage;
+    if (http_client_fetch_usage(&incoming)) {
+        usage = incoming;
+        usage_rate_sample(usage.session_pct);
+        ui_update(&usage);
+        led_set(LED_ORANGE);
+        Serial.printf("DEBUG: Success! Session: %.1f%%, Weekly: %.1f%%\n",
+            incoming.session_pct, incoming.weekly_pct);
+    } else {
+        led_set(LED_RED_BLINK);
+        Serial.println("DEBUG: API polling failed - timeout or connection error");
     }
 }
 
@@ -73,7 +82,10 @@ void setup() {
     splash_init();
     ui_init();
     led_init();
-    ui_update_ble_status(FIRE_LINK_UNUSED, nullptr, nullptr);
+
+    wifi_init();
+    http_client_init(DAEMON_IP, DAEMON_PORT);
+
     ui_update_battery(power_battery_pct(), power_is_charging());
     ui_show_screen(SCREEN_SPLASH);
     seed_demo_data();
@@ -87,7 +99,9 @@ void loop() {
     imu_tick();
     splash_tick();
     led_tick();
-    poll_serial_usage();
+    wifi_tick();
+    http_client_tick();
+    poll_wifi_usage();
 
     if (M5.BtnA.wasPressed()) {
         ui_toggle_splash();
@@ -100,9 +114,11 @@ void loop() {
         if (splash_is_active()) splash_pick_for_current_rate();
         else if (ui_get_current_screen() == SCREEN_GALLERY) ui_cycle_gallery_visual();
         else if (ui_get_current_screen() == SCREEN_USAGE) {
-            // Request immediate scraper refresh
-            Serial.println("{\"cmd\":\"refresh\"}");
+            // Request immediate refresh from daemon and schedule forced poll after daemon scrapes
+            http_client_request_refresh();
+            force_poll_at_ms = millis() + DAEMON_SCRAPE_DELAY_MS;
             led_set(LED_ORANGE);
+            Serial.println("DEBUG: Button C - requesting refresh");
         }
     }
 
@@ -114,6 +130,13 @@ void loop() {
         last_pct = pct;
         last_charging = charging;
         ui_update_battery(pct, charging);
+    }
+
+    static uint32_t last_wifi_update = 0;
+    uint32_t now = millis();
+    if (now - last_wifi_update >= 5000) {
+        last_wifi_update = now;
+        ui_update_wifi_status(wifi_get_ssid(), wifi_get_signal_strength(), wifi_get_ip(), wifi_is_connected());
     }
 
     delay(5);

@@ -13,6 +13,10 @@ static int battery_percent = -1;
 static bool battery_charging = false;
 static uint32_t anim_last_ms = 0;
 static uint8_t gallery_idx = 0;
+static const char* wifi_ssid = "N/A";
+static int wifi_signal = 0;
+static const char* wifi_ip = "0.0.0.0";
+static bool wifi_connected = false;
 
 static const char* const kFooterText = "* mtorregrosadev :p";
 
@@ -119,17 +123,29 @@ static void draw_usage_screen(void) {
 
 static void draw_system_screen(void) {
     M5.Display.fillScreen(color565(THEME_BG));
-    draw_header("Status");
+    draw_header("WiFi");
     M5.Display.fillRoundRect(12, 72, 296, 132, 8, color565(THEME_PANEL));
     set_font_body();
     M5.Display.setTextDatum(top_left);
     M5.Display.setTextColor(color565(THEME_TEXT), color565(THEME_PANEL));
-    M5.Display.drawString("M5Stack Fire dashboard", 24, 88);
+
+    char status_text[32];
+    snprintf(status_text, sizeof(status_text), wifi_connected ? "Connected" : "Disconnected");
+    M5.Display.drawString(status_text, 24, 88);
+
     M5.Display.setTextColor(color565(THEME_DIM), color565(THEME_PANEL));
-    M5.Display.drawString(current_data.ok ? current_data.status : "waiting for data", 24, 110);
-    M5.Display.drawString("A splash", 24, 142);
-    M5.Display.drawString("B screen", 24, 162);
-    M5.Display.drawString("C refresh data", 24, 182);
+    M5.Display.drawString(wifi_ssid, 24, 110);
+
+    char ip_text[24];
+    snprintf(ip_text, sizeof(ip_text), "IP: %s", wifi_ip);
+    M5.Display.drawString(ip_text, 24, 130);
+
+    char signal_text[24];
+    snprintf(signal_text, sizeof(signal_text), "Signal: %d%%", wifi_signal);
+    M5.Display.drawString(signal_text, 24, 150);
+
+    M5.Display.drawString("A splash", 24, 182);
+    M5.Display.drawString("B screen", 24, 202);
 }
 
 static void draw_gallery_screen(void) {
@@ -235,6 +251,14 @@ void ui_update_ble_status(fire_link_state_t state, const char* name, const char*
     (void)state;
     (void)name;
     (void)mac;
+    if (current_screen == SCREEN_BLUETOOTH) redraw();
+}
+
+void ui_update_wifi_status(const char* ssid, int signal_strength, const char* ip, bool connected) {
+    wifi_ssid = ssid ? ssid : "N/A";
+    wifi_signal = signal_strength;
+    wifi_ip = ip ? ip : "0.0.0.0";
+    wifi_connected = connected;
     if (current_screen == SCREEN_BLUETOOTH) redraw();
 }
 

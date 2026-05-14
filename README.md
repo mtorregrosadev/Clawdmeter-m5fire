@@ -1,53 +1,161 @@
-# Clawdmeter
+# ClawdMeter M5Fire
 
-A small ESP32 dashboard I made for my desk to keep an eye on Claude Code usage.
+ESP32-S3 desk-side monitor for Claude Code usage tracking via **WiFi**.
 
-It runs on a [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-2.16) and pairs with my laptop over Bluetooth, and the splash screen plays pixel-art Clawd animations that get
-busier when your usage rate climbs. The two side buttons send Space and
-Shift+Tab over BLE HID for Claude Code's voice mode and mode-toggle shortcuts.
+## Quick Start
 
-|              Usage meter              |              Clawd animation screen              |
-| :-----------------------------------: | :----------------------------------------------: |
-| ![Usage meter](assets/demo.jpeg) | ![Clawd animation screen](assets/demo.gif) |
+👉 **[WiFi Setup Guide →](README_WIFI.md)**  
+Complete setup, config, troubleshooting
 
-The Clawd animations come from [claudepix](https://claudepix.vercel.app), [@amaanbuilds](https://x.com/amaanbuilds)'s library of pixel-art Clawd sprites, check it out, it's lovely.
+---
 
-## Screens
+## What is ClawdMeter?
 
-The device boots into the splash and stays there until you press the middle (PWR) button, which cycles between Usage and Bluetooth. Tap the screen anywhere (except the Reset zone on the Bluetooth screen) to flip back to the splash; tap again to dismiss it.
+Real-time monitor showing Claude usage:
+- **Session usage** — % of 5-hour limit used
+- **Weekly usage** — % of 7-day limit used
+- **Reset timers** — Minutes until limits reset
+- **WiFi status** — Connected network, signal strength, IP
+- **Pixel animations** — Clawd splash screen with usage-rate feedback
 
-|              Splash               |              Usage              |                Bluetooth                |
-| :-------------------------------: | :-----------------------------: | :-------------------------------------: |
-| ![Splash](screenshots/splash.png) | ![Usage](screenshots/usage.png) | ![Bluetooth](screenshots/bluetooth.png) |
-|   Splash; touch-toggle anytime    | Session and weekly utilization  |    Connection status and bond reset     |
+## Features
 
-While the splash is up, the middle button cycles animations instead of screens. The firmware also auto-rotates every 20 s within the current usage-rate group, so a long stretch on the splash isn't just one Clawd on loop.
+✅ **WiFi-based** — No Bluetooth pairing, auto-reconnect  
+✅ **Captive portal** — Setup WiFi without code changes  
+✅ **Battery powered** — Works 8+ hours without USB  
+✅ **Auto-refresh** — Polls daemon every 30 seconds  
+✅ **Button refresh** — Force immediate update on-demand  
+✅ **LED feedback** — Orange (success) / Red (error)  
+✅ **Pixel animations** — Clawd sprites on splash screen  
 
 ## Hardware
 
-- [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-2.16) — ESP32-S3R8, 2.16" 480×480 AMOLED (CO5300 QSPI), CST9220 cap touch, AXP2101 PMU + Li-Po battery, QMI8658 IMU
-- USB-C cable for flashing firmware and charging
-- 3.7V Li-Po battery (MX1.25 2-pin connector, optional)
+- **[Waveshare ESP32-S3-Touch-AMOLED-2.16](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-2.16)** 
+  - 480×480 AMOLED display
+  - 3 physical buttons + capacitive touch
+  - Internal Li-Po battery
+  - WiFi 802.11b/g/n
 
-## Prerequisites
+## Usage
 
-- Linux (tested on Ubuntu)
-- [PlatformIO CLI](https://docs.platformio.org/en/latest/core/installation/index.html)
-- `curl`, `bluetoothctl`, `busctl` (BlueZ Bluetooth stack)
-- Claude Code with an active subscription
+**Buttons**:
+- **A** — Show/hide splash animation
+- **B** — Cycle screens (Usage ↔ WiFi Status)
+- **C** — Force refresh (Usage screen)
 
-## MacOS support
+**LED feedback**:
+- 🟠 Orange flash (2s) = API polling succeeded
+- 🔴 Red blinking = API error or disconnected
 
-MacOS is fully supported, that is as soon as you prompt it and create a pull request for it!
+## Setup (5 minutes)
 
-I run Linux myself so it's harder for me to test this but anyone who wants MacOS support is welcome to contribute.
+1. **Install daemon dependencies**:
+   ```bash
+   pip3 install requests playwright
+   playwright install
+   ```
 
-## Flash the firmware
+2. **Start API daemon on Mac**:
+   ```bash
+   cd daemon
+   sudo python3 wifi-api-daemon.py --host 192.168.1.105 --port 80
+   ```
+
+3. **Configure daemon IP** (firmware only):
+   ```bash
+   cd firmware
+   cp include/config.h.example include/config.h
+   # Edit include/config.h and set your Mac's IP:
+   #   #define DAEMON_IP "192.168.1.XXX"
+   ```
+
+4. **Flash firmware to M5**:
+   ```bash
+   cd firmware
+   pio run -t upload --upload-port /dev/ttyACM0
+   ```
+
+5. **Configure WiFi**:
+   - M5 boots → creates `ClawdMeter-Setup` AP
+   - Connect from phone (password: `12345678`)
+   - Browser opens config page at `http://192.168.1.1`
+   - Enter your WiFi SSID and password
+   - M5 reconnects to your network
+
+6. **Done!** M5 now polls daemon automatically every 30s.
+
+For detailed instructions → **[README_WIFI.md](README_WIFI.md)**
+
+---
+
+## Architecture
+
+```
+M5Fire (WiFi)          Mac Daemon (HTTP)         Claude API
+     |                      |                         |
+     +---(polls 30s)------->+                         |
+                            +---(scrapes 60s)------->+
+                            |
+     +<---- JSON data ------+
+     |
+  [display]
+  [LED]
+```
+
+## Files
+
+```
+firmware/          — ESP32-S3 firmware (C++)
+├─ src/
+│  ├─ main.cpp          — Main loop, buttons
+│  ├─ wifi.cpp          — WiFi + captive portal
+│  ├─ http_client.cpp   — HTTP polling
+│  ├─ ui.cpp            — Display
+│  ├─ leds.cpp          — LED control
+│  └─ splash.cpp        — Pixel animations
+└─ platformio.ini
+
+daemon/            — Mac daemon (Python)
+└─ wifi-api-daemon.py   — Scrapes usage, serves HTTP
+```
+
+## Documentation
+
+- **[README_WIFI.md](README_WIFI.md)** — Complete setup + troubleshooting
+- **[TROUBLESHOOTING_WIFI.md](TROUBLESHOOTING_WIFI.md)** — Common issues
+- **[QUICK_START_WIFI.md](QUICK_START_WIFI.md)** — Quick reference
+- **[CLAUDE.md](CLAUDE.md)** — Development notes
+
+## Limitations
+
+- ❌ **Public WiFi** — eduroam (802.1X auth) not supported
+- ❌ **Remote access** — Requires local network only
+- ❌ **Multiple networks** — One SSID stored (clear EEPROM to change)
+- ⚠️ **Offline** — Shows cached data if daemon unreachable
+
+## Build
 
 ```bash
 cd firmware
-pio run -t upload --upload-port /dev/ttyACM0
+pio run -d firmware                                      # Compile
+pio run -d firmware -t upload --upload-port /dev/ttyACM0 # Flash
 ```
+
+## Troubleshooting
+
+**"Not connected to WiFi"** — Check WiFi credentials, try power-cycle
+
+**"API polling failed"** — Daemon not running, check: `ps aux | grep wifi-api`
+
+**Refresh slow** — Daemon scraper takes ~3 seconds, normal
+
+See **[TROUBLESHOOTING_WIFI.md](TROUBLESHOOTING_WIFI.md)** for more.
+
+---
+
+## License
+
+MIT
 
 ## Bluetooth pairing
 
