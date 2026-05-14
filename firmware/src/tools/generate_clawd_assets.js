@@ -56,27 +56,44 @@ function rawToU16(filePath) {
   return values;
 }
 
+function bgraToRgb565(bgra) {
+  const b = (bgra >> 24) & 0xFF;
+  const g = (bgra >> 16) & 0xFF;
+  const r = (bgra >> 8) & 0xFF;
+  const a = bgra & 0xFF;
+
+  if (a < 128) return 0x0000;
+
+  const r5 = (r >> 3) & 0x1F;
+  const g6 = (g >> 2) & 0x3F;
+  const b5 = (b >> 3) & 0x1F;
+
+  return (r5 << 11) | (g6 << 5) | b5;
+}
+
 function buildAnimationRaw() {
   const rawPath = path.join(outputDir, `${animation.ident}.rgb565`);
   const input = path.join(sourceDir, animation.file);
-  const filter = [
-    `[0:v]select='not(mod(n\\,${animation.selectEvery}))',setpts=N/15/TB,scale=${animation.width}:${animation.height}:flags=neighbor:force_original_aspect_ratio=decrease[fg]`,
-    `[1:v][fg]overlay=(W-w)/2:(H-h)/2:shortest=1:eof_action=endall,format=rgb565le[out]`,
-  ].join(';');
+  const rgbaPath = path.join(outputDir, `${animation.ident}_rgba.raw`);
 
   runFfmpeg([
     '-y',
     '-i', input,
-    '-f', 'lavfi',
-    '-i', `color=c=black:s=${animation.width}x${animation.height}:r=15`,
-    '-filter_complex', filter,
-    '-map', '[out]',
-    '-fps_mode', 'vfr',
+    '-vf', `select='not(mod(n\\,${animation.selectEvery}))',setpts=N/15/TB,scale=${animation.width}:${animation.height}:flags=neighbor:force_original_aspect_ratio=decrease`,
+    '-pixel_format', 'rgba',
     '-f', 'rawvideo',
-    rawPath,
+    rgbaPath,
   ]);
 
-  const values = rawToU16(rawPath);
+  const rgba = fs.readFileSync(rgbaPath);
+  const values = [];
+  for (let i = 0; i < rgba.length; i += 4) {
+    const pixel = (rgba[i] << 24) | (rgba[i+1] << 16) | (rgba[i+2] << 8) | rgba[i+3];
+    values.push(bgraToRgb565(pixel));
+  }
+
+  fs.unlinkSync(rgbaPath);
+
   const frameSize = animation.width * animation.height;
   const frameCount = Math.floor(values.length / frameSize);
   return { rawPath, values, frameCount };
@@ -84,25 +101,36 @@ function buildAnimationRaw() {
 
 function buildPosterRaw(poster, width, height) {
   const rawPath = path.join(outputDir, `${poster.ident}.rgb565`);
+  const pngPath = path.join(outputDir, `${poster.ident}.png`);
+  const rgbaPath = path.join(outputDir, `${poster.ident}_rgba.raw`);
   const input = path.join(sourceDir, poster.file);
-  const filter = [
-    `[0:v]select='eq(n\\,${poster.frame})',scale=${width}:${height}:flags=neighbor:force_original_aspect_ratio=decrease[fg]`,
-    `[1:v][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,format=rgb565le[out]`,
-  ].join(';');
 
   runFfmpeg([
     '-y',
     '-i', input,
-    '-f', 'lavfi',
-    '-i', `color=c=black:s=${width}x${height}:r=15`,
-    '-filter_complex', filter,
-    '-map', '[out]',
-    '-frames:v', '1',
-    '-f', 'rawvideo',
-    rawPath,
+    '-vf', `select='eq(n,${poster.frame})'`,
+    '-vframes', '1',
+    pngPath,
   ]);
 
-  return { rawPath, values: rawToU16(rawPath) };
+  runFfmpeg([
+    '-y',
+    '-i', pngPath,
+    '-pixel_format', 'rgba',
+    '-f', 'rawvideo',
+    rgbaPath,
+  ]);
+
+  const rgba = fs.readFileSync(rgbaPath);
+  const values = [];
+  for (let i = 0; i < rgba.length; i += 4) {
+    const pixel = (rgba[i] << 24) | (rgba[i+1] << 16) | (rgba[i+2] << 8) | rgba[i+3];
+    values.push(bgraToRgb565(pixel));
+  }
+
+  fs.unlinkSync(rgbaPath);
+
+  return { rawPath, values };
 }
 
 function generate() {

@@ -13,7 +13,7 @@ static bool battery_charging = false;
 static uint32_t anim_last_ms = 0;
 static uint8_t gallery_idx = 0;
 
-static const char* const kFooterText = "* mtorregrosadev...";
+static const char* const kFooterText = "* mtorregrosadev :p";
 
 static uint16_t color565(uint32_t hex) {
     uint8_t r = (hex >> 16) & 0xFF;
