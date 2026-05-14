@@ -3,6 +3,7 @@
 #include "splash.h"
 #include "theme.h"
 #include "logo.h"
+#include "log.h"
 #include <M5Unified.h>
 #include <math.h>
 
@@ -11,8 +12,6 @@ static screen_t prev_non_splash_screen = SCREEN_USAGE;
 static UsageData current_data = {};
 static int battery_percent = -1;
 static bool battery_charging = false;
-static uint32_t anim_last_ms = 0;
-static uint8_t gallery_idx = 0;
 static const char* wifi_ssid = "N/A";
 static int wifi_signal = 0;
 static const char* wifi_ip = "0.0.0.0";
@@ -121,9 +120,9 @@ static void draw_usage_screen(void) {
     M5.Display.drawString(kFooterText, 160, 233);
 }
 
-static void draw_system_screen(void) {
+static void draw_wifi_screen(void) {
     M5.Display.fillScreen(color565(THEME_BG));
-    draw_header("WiFi");
+    draw_header("WiFi Status");
     M5.Display.fillRoundRect(12, 72, 296, 132, 8, color565(THEME_PANEL));
     set_font_body();
     M5.Display.setTextDatum(top_left);
@@ -148,22 +147,25 @@ static void draw_system_screen(void) {
     M5.Display.drawString("B screen", 24, 202);
 }
 
-static void draw_gallery_screen(void) {
-    const ClawdPosterAsset& poster = kClawdGalleryPosters[gallery_idx % kClawdGalleryPosterCount];
-    const int16_t x = (M5.Display.width() - poster.width) / 2;
-    const int16_t y = 44;
-
+static void draw_log_screen(void) {
     M5.Display.fillScreen(color565(THEME_BG));
-    draw_header("Clawd Gallery");
-    M5.Display.fillRoundRect(30, 38, 260, 180, 16, color565(THEME_PANEL));
-    M5.Display.pushImage(x, y, poster.width, poster.height, poster.pixels);
-    M5.Display.setTextColor(color565(THEME_TEXT), color565(THEME_PANEL));
-    M5.Display.setTextDatum(bottom_center);
-    M5.Display.drawString(poster.name, 160, 208);
-    set_font_footer();
-    M5.Display.setTextColor(color565(THEME_DIM), color565(THEME_BG));
-    M5.Display.setTextDatum(bottom_center);
-    M5.Display.drawString("Auto-rotates every 4s", 160, 234);
+    draw_header("System Log");
+
+    set_font_body();
+    M5.Display.setTextColor(color565(THEME_TEXT), color565(THEME_BG));
+    M5.Display.setTextDatum(top_left);
+
+    int log_count = log_get_count();
+    int start_line = log_count > 10 ? log_count - 10 : 0;
+    int y = 50;
+
+    for (int i = start_line; i < log_count && y < 220; i++) {
+        const char* line = log_get_line(i);
+        if (line && *line) {
+            M5.Display.drawString(line, 12, y);
+            y += 16;
+        }
+    }
 }
 
 static void redraw(void) {
@@ -175,13 +177,13 @@ static void redraw(void) {
             splash_hide();
             draw_usage_screen();
             break;
-        case SCREEN_GALLERY:
+        case SCREEN_LOG:
             splash_hide();
-            draw_gallery_screen();
+            draw_log_screen();
             break;
-        case SCREEN_BLUETOOTH:
+        case SCREEN_WIFI:
             splash_hide();
-            draw_system_screen();
+            draw_wifi_screen();
             break;
         default:
             break;
@@ -200,18 +202,12 @@ void ui_update(const UsageData* data) {
 }
 
 void ui_tick_anim(void) {
-    if (current_screen != SCREEN_GALLERY) return;
-    uint32_t now = millis();
-    if (now - anim_last_ms < 4000) return;
-    anim_last_ms = now;
-    gallery_idx = (gallery_idx + 1) % kClawdGalleryPosterCount;
-    draw_gallery_screen();
+    // Animation tick - not needed for log screen
 }
 
 void ui_show_screen(screen_t screen) {
     if (screen != SCREEN_SPLASH) prev_non_splash_screen = screen;
     current_screen = screen;
-    if (screen == SCREEN_GALLERY) anim_last_ms = millis();
     redraw();
 }
 
@@ -219,23 +215,17 @@ void ui_cycle_screen(void) {
     screen_t next = SCREEN_USAGE;
     switch (current_screen) {
         case SCREEN_USAGE:
-            next = SCREEN_GALLERY;
+            next = SCREEN_LOG;
             break;
-        case SCREEN_GALLERY:
-            next = SCREEN_BLUETOOTH;
+        case SCREEN_LOG:
+            next = SCREEN_WIFI;
             break;
-        case SCREEN_BLUETOOTH:
+        case SCREEN_WIFI:
         default:
             next = SCREEN_USAGE;
             break;
     }
     ui_show_screen(next);
-}
-
-void ui_cycle_gallery_visual(void) {
-    gallery_idx = (gallery_idx + 1) % kClawdGalleryPosterCount;
-    anim_last_ms = millis();
-    if (current_screen == SCREEN_GALLERY) draw_gallery_screen();
 }
 
 void ui_toggle_splash(void) {
@@ -247,19 +237,12 @@ screen_t ui_get_current_screen(void) {
     return current_screen;
 }
 
-void ui_update_ble_status(fire_link_state_t state, const char* name, const char* mac) {
-    (void)state;
-    (void)name;
-    (void)mac;
-    if (current_screen == SCREEN_BLUETOOTH) redraw();
-}
-
 void ui_update_wifi_status(const char* ssid, int signal_strength, const char* ip, bool connected) {
     wifi_ssid = ssid ? ssid : "N/A";
     wifi_signal = signal_strength;
     wifi_ip = ip ? ip : "0.0.0.0";
     wifi_connected = connected;
-    if (current_screen == SCREEN_BLUETOOTH) redraw();
+    if (current_screen == SCREEN_WIFI) redraw();
 }
 
 void ui_update_battery(int percent, bool charging) {

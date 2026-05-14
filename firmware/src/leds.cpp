@@ -34,6 +34,9 @@ void led_set(led_state_t state) {
         case LED_RED_BLINK:
             led_set_color(255, 0, 0);    // Red for first flash
             break;
+        case LED_BLUE_BLINK:
+            led_set_color(0, 0, 255);    // Blue for first flash
+            break;
         case LED_OFF:
         default:
             led_set_color(0, 0, 0);      // Off
@@ -52,6 +55,13 @@ void led_tick(void) {
         uint32_t cycle = elapsed % BLINK_DURATION_MS;
         if (cycle < BLINK_DURATION_MS / 2) {
             led_set_color(255, 0, 0);
+        } else {
+            led_set_color(0, 0, 0);
+        }
+    } else if (current_state == LED_BLUE_BLINK) {
+        uint32_t cycle = elapsed % BLINK_DURATION_MS;
+        if (cycle < BLINK_DURATION_MS / 2) {
+            led_set_color(0, 0, 255);
         } else {
             led_set_color(0, 0, 0);
         }

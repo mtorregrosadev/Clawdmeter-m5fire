@@ -1,4 +1,5 @@
 #include "wifi.h"
+#include "leds.h"
 #include <esp_wifi.h>
 #include <esp_netif.h>
 #include <esp_http_server.h>
@@ -11,15 +12,18 @@
 #define SSID_LEN 32
 #define PASS_OFFSET 32
 #define PASS_LEN 64
+#define CONNECT_RETRY_TIMEOUT_MS 3000  // Retry every 3 seconds
 
 static wifi_state_t current_state = WIFI_IDLE;
 static char saved_ssid[SSID_LEN] = {0};
 static char saved_pass[PASS_LEN] = {0};
 static char current_ip[20] = "0.0.0.0";
 static uint32_t connect_start_ms = 0;
-static const uint32_t CONNECT_TIMEOUT_MS = 15000;
+static const uint32_t CONNECT_TIMEOUT_MS = 30000;  // 30 sec for iOS hotspot
 static httpd_handle_t server_handle = NULL;
 static bool initialized = false;
+static uint8_t connection_attempts = 0;
+static uint32_t ip_assign_start_ms = 0;  // Track when IP assignment starts
 
 static void load_credentials(void) {
     EEPROM.begin(EEPROM_SIZE);
@@ -105,7 +109,8 @@ static esp_err_t handle_configure(httpd_req_t *req) {
             save_credentials(ssid, pass);
             strlcpy(saved_ssid, ssid, sizeof(saved_ssid));
             strlcpy(saved_pass, pass, sizeof(saved_pass));
-            Serial.printf("DEBUG: Saved credentials - SSID: %s, Password length: %d\n", ssid, strlen(pass));
+            Serial.printf("DEBUG: Saved credentials - SSID: %s, Pass: %s (len: %d)\n", ssid, pass, strlen(pass));
+            Serial.println("DEBUG: Will attempt WiFi connection in 60 seconds (or when credentials received)");
             httpd_resp_send(req, (const char*)"<html><body>Connecting...</body></html>", -1);
             return ESP_OK;
         }
@@ -123,6 +128,7 @@ static void start_ap(void) {
 
     current_state = WIFI_IDLE;
     connect_start_ms = millis();  // Reset timer for next retry
+    led_set(LED_BLUE_BLINK);       // Indicate WiFi reconfiguration mode
 
     esp_wifi_set_mode(WIFI_MODE_AP);
 
@@ -198,24 +204,52 @@ void wifi_init(void) {
     connect_wifi();
 }
 
+void wifi_reconfigure(void) {
+    Serial.println("DEBUG: Starting WiFi reconfiguration (AP mode)");
+    start_ap();
+}
+
 void wifi_tick(void) {
     if (current_state == WIFI_CONNECTING) {
         wifi_ap_record_t ap_info = {};
         uint8_t status = esp_wifi_sta_get_ap_info(&ap_info);
 
         if (status == ESP_OK) {
-            current_state = WIFI_CONNECTED;
-            esp_netif_ip_info_t ip_info = {};
-            esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-            if (netif) {
-                esp_netif_get_ip_info(netif, &ip_info);
+            current_state = WIFI_GETTING_IP;
+            ip_assign_start_ms = millis();
+            Serial.println("DEBUG: Connected to AP, waiting for IP assignment...");
+        } else if (millis() - connect_start_ms > CONNECT_TIMEOUT_MS) {
+            connection_attempts++;
+            if (connection_attempts < 3) {
+                Serial.printf("DEBUG: Connection timeout, retrying (attempt %d/3)\n", connection_attempts + 1);
+                connect_start_ms = millis();
+                esp_wifi_disconnect();
+                esp_wifi_connect();
+            } else {
+                Serial.println("DEBUG: Connection failed after 3 attempts, back to AP mode");
+                current_state = WIFI_FAILED;
+            }
+        }
+    } else if (current_state == WIFI_GETTING_IP) {
+        esp_netif_ip_info_t ip_info = {};
+        esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (netif) {
+            esp_netif_get_ip_info(netif, &ip_info);
+            // Check if we have a valid IP (not 0.0.0.0)
+            if (ip_info.ip.addr != 0) {
+                current_state = WIFI_CONNECTED;
+                connection_attempts = 0;
                 snprintf(current_ip, sizeof(current_ip), "%d.%d.%d.%d",
                     (ip_info.ip.addr >> 0) & 0xFF,
                     (ip_info.ip.addr >> 8) & 0xFF,
                     (ip_info.ip.addr >> 16) & 0xFF,
                     (ip_info.ip.addr >> 24) & 0xFF);
+                Serial.printf("DEBUG: Got IP address! IP: %s\n", current_ip);
             }
-        } else if (millis() - connect_start_ms > CONNECT_TIMEOUT_MS) {
+        }
+        // Timeout waiting for IP (10 seconds should be enough for iOS)
+        if (millis() - ip_assign_start_ms > 10000) {
+            Serial.println("DEBUG: IP assignment timeout, going back to AP mode");
             current_state = WIFI_FAILED;
         }
     } else if (current_state == WIFI_FAILED) {
@@ -223,9 +257,12 @@ void wifi_tick(void) {
             start_ap();
         }
     } else if (current_state == WIFI_IDLE && server_handle) {
-        if (strlen(saved_ssid) > 0 && millis() - connect_start_ms > 5000) {
+        if (strlen(saved_ssid) > 0 && millis() - connect_start_ms > 60000) {
+            led_set(LED_OFF);
+            connection_attempts = 0;
+            Serial.printf("DEBUG: Attempting to connect to SSID: %s\n", saved_ssid);
             connect_wifi();
-            connect_start_ms = millis();  // Reset timer
+            connect_start_ms = millis();
         }
     }
 }

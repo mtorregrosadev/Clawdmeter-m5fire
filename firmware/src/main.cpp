@@ -11,6 +11,7 @@
 #include "leds.h"
 #include "wifi.h"
 #include "http_client.h"
+#include "log.h"
 
 static UsageData usage = {};
 static uint32_t last_poll_ms = 0;
@@ -49,13 +50,13 @@ static void poll_wifi_usage() {
     if (!force_poll && !regular_poll) return;
 
     if (!http_client_is_connected()) {
-        Serial.println("DEBUG: Not connected to WiFi, skipping poll");
         return;
     }
 
     last_poll_ms = now;
     force_poll_at_ms = 0;  // Clear forced poll
     Serial.println("DEBUG: Polling usage from API...");
+    http_client_debug_network();
 
     UsageData incoming = usage;
     if (http_client_fetch_usage(&incoming)) {
@@ -63,10 +64,15 @@ static void poll_wifi_usage() {
         usage_rate_sample(usage.session_pct);
         ui_update(&usage);
         led_set(LED_ORANGE);
+        char log_msg[64];
+        snprintf(log_msg, sizeof(log_msg), "Updated: %d%% / %d%%",
+            (int)incoming.session_pct, (int)incoming.weekly_pct);
+        log_add(log_msg);
         Serial.printf("DEBUG: Success! Session: %.1f%%, Weekly: %.1f%%\n",
             incoming.session_pct, incoming.weekly_pct);
     } else {
         led_set(LED_RED_BLINK);
+        log_add("API error: timeout/connection");
         Serial.println("DEBUG: API polling failed - timeout or connection error");
     }
 }
@@ -75,6 +81,9 @@ void setup() {
     auto cfg = M5.config();
     M5.begin(cfg);
     Serial.begin(115200);
+
+    log_init();
+    log_add("System booting...");
 
     power_init();
     imu_init();
@@ -86,6 +95,7 @@ void setup() {
     wifi_init();
     http_client_init(DAEMON_IP, DAEMON_PORT);
 
+    log_add("WiFi init complete");
     ui_update_battery(power_battery_pct(), power_is_charging());
     ui_show_screen(SCREEN_SPLASH);
     seed_demo_data();
@@ -106,18 +116,24 @@ void loop() {
     if (M5.BtnA.wasPressed()) {
         ui_toggle_splash();
     }
+    if (M5.BtnA.pressedFor(2000)) {
+        if (ui_get_current_screen() == SCREEN_WIFI) {
+            wifi_reconfigure();
+            log_add("WiFi reconfiguration started");
+        }
+    }
     if (M5.BtnB.wasPressed()) {
         if (ui_get_current_screen() == SCREEN_SPLASH) splash_next();
         else ui_cycle_screen();
     }
     if (M5.BtnC.wasPressed()) {
         if (splash_is_active()) splash_pick_for_current_rate();
-        else if (ui_get_current_screen() == SCREEN_GALLERY) ui_cycle_gallery_visual();
         else if (ui_get_current_screen() == SCREEN_USAGE) {
             // Request immediate refresh from daemon and schedule forced poll after daemon scrapes
             http_client_request_refresh();
             force_poll_at_ms = millis() + DAEMON_SCRAPE_DELAY_MS;
             led_set(LED_ORANGE);
+            log_add("Manual refresh requested");
             Serial.println("DEBUG: Button C - requesting refresh");
         }
     }

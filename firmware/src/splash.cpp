@@ -14,6 +14,17 @@ static uint16_t color565(uint32_t hex) {
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }
 
+static void draw_static_ui() {
+    const auto& anim = kClawdSplashAnimation;
+    M5.Display.fillScreen(color565(THEME_BG));
+    M5.Display.setTextColor(color565(THEME_TEXT), color565(THEME_BG));
+    M5.Display.setTextDatum(top_center);
+    M5.Display.drawString("Clawdmeter Fire", M5.Display.width() / 2, 10);
+    M5.Display.setTextColor(color565(THEME_ACCENT), color565(THEME_BG));
+    M5.Display.setTextDatum(bottom_center);
+    M5.Display.drawString(anim.name, M5.Display.width() / 2, 232);
+}
+
 static void draw_frame(uint16_t frame_index) {
     const auto& anim = kClawdSplashAnimation;
     const uint32_t frame_size = (uint32_t)anim.width * anim.height;
@@ -21,14 +32,13 @@ static void draw_frame(uint16_t frame_index) {
     const int16_t x = (M5.Display.width() - anim.width) / 2;
     const int16_t y = 24;
 
-    M5.Display.fillScreen(color565(THEME_BG));
-    M5.Display.setTextColor(color565(THEME_TEXT), color565(THEME_BG));
-    M5.Display.setTextDatum(top_center);
-    M5.Display.drawString("Clawdmeter Fire", M5.Display.width() / 2, 10);
+    // Only redraw the animation region + margins to avoid flicker
+    int16_t clear_x = x - 2;
+    int16_t clear_y = y - 2;
+    int16_t clear_w = anim.width + 4;
+    int16_t clear_h = anim.height + 4;
+    M5.Display.fillRect(clear_x, clear_y, clear_w, clear_h, color565(THEME_BG));
     M5.Display.pushImage(x, y, anim.width, anim.height, pixels);
-    M5.Display.setTextColor(color565(THEME_ACCENT), color565(THEME_BG));
-    M5.Display.setTextDatum(bottom_center);
-    M5.Display.drawString(anim.name, M5.Display.width() / 2, 232);
 }
 
 void splash_init(void) {
@@ -48,12 +58,14 @@ void splash_tick(void) {
 
 void splash_next(void) {
     frame = (frame + 1) % kClawdSplashAnimation.frame_count;
+    draw_static_ui();
     draw_frame(frame);
 }
 
 void splash_show(void) {
     active = true;
     last_ms = millis();
+    draw_static_ui();
     draw_frame(frame);
 }
 
@@ -70,5 +82,6 @@ bool splash_is_active(void) {
 }
 
 void splash_render_static(void) {
+    draw_static_ui();
     draw_frame(frame);
 }
