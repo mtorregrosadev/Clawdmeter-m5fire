@@ -4,13 +4,13 @@ A real-time Claude API usage monitor running on M5Stack Fire hardware. Displays 
 
 ## Features
 
-- 📊 Real-time usage tracking from Claude API
-- 🎨 Animated pixel-art splash screen with 13 Claude animations
-- 🔋 Battery status indicator
-- 💡 RGB LED status feedback (orange on data refresh, red blink on error)
-- 🎮 Three-button interface (A: splash, B: screens, C: refresh)
-- 📱 Persistent Playwright browser session for web scraping
-- 🔌 Serial communication (115200 baud) between M5Stack and macOS daemon
+- Real-time usage tracking from Claude API
+- Animated pixel-art splash screen with 13 Claude animations
+- Battery status indicator
+- RGB LED status feedback (orange on data refresh, red blink on error)
+- Three-button interface (A: splash, B: screens, C: refresh)
+- Persistent Playwright browser session for web scraping
+- Serial communication (115200 baud) between M5Stack and macOS daemon
 
 ## Hardware
 
