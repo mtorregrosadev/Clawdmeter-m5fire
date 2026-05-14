@@ -105,6 +105,7 @@ void setup() {
 void loop() {
     M5.update();
     ui_tick_anim();
+    ui_tick();
     power_tick();
     imu_tick();
     splash_tick();

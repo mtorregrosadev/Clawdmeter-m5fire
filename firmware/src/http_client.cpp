@@ -6,6 +6,7 @@
 #include <lwip/netdb.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
+#include "log.h"
 
 #ifndef DAEMON_PATH
 #define DAEMON_PATH "/api/usage"
@@ -116,8 +117,10 @@ static void debug_network_status(void) {
     if (!connected) {
 #if DAEMON_USE_TLS
         Serial.println("ERROR: Could not establish TLS connection");
+        log_add("TLS connect failed");
 #else
         Serial.println("ERROR: Could not establish TCP connection");
+        log_add("TCP connect failed");
 #endif
         return;
     }
@@ -146,6 +149,7 @@ static void debug_network_status(void) {
 
     if (!client.available()) {
         Serial.println("TIMEOUT: No response from server after 5 seconds");
+        log_add("HTTP timeout waiting");
         client.stop();
         return;
     }
@@ -154,6 +158,8 @@ static void debug_network_status(void) {
     Serial.println("\n=== HTTP STATUS LINE ===");
     String statusLine = client.readStringUntil('\n');
     Serial.println(statusLine);
+    if (statusLine.indexOf("200") >= 0) log_add("HTTP 200 OK");
+    else log_format("HTTP %s", statusLine.c_str());
 
     Serial.println("\n=== RESPONSE HEADERS ===");
     int lineCount = 0;
@@ -237,6 +243,7 @@ bool http_client_fetch_usage(UsageData* out) {
     if (http_client.begin(mac_url)) {
 #endif
         int httpCode = http_client.GET();
+        log_format("GET %d", httpCode);
 
         if (httpCode == 200) {
             String payload = http_client.getString();
@@ -254,11 +261,18 @@ bool http_client_fetch_usage(UsageData* out) {
 
                 last_valid_data = *out;
                 last_successful_poll_ms = now;
+                log_format("Updated %.0f%% / %.0f%%", out->session_pct, out->weekly_pct);
                 success = true;
+            } else {
+                log_add("JSON parse failed");
             }
+        } else {
+            log_format("HTTP err %d", httpCode);
         }
 
         http_client.end();
+    } else {
+        log_add("HTTP begin failed");
     }
 
     return success;
@@ -291,8 +305,10 @@ void http_client_request_refresh(void) {
 
         if (httpCode == 200) {
             Serial.println("DEBUG: Refresh requested successfully");
+            log_add("Refresh requested");
         } else {
             Serial.printf("DEBUG: Refresh request failed (HTTP %d)\n", httpCode);
+            log_format("Refresh HTTP %d", httpCode);
         }
 
         http_client.end();

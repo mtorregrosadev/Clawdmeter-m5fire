@@ -22,3 +22,4 @@ void ui_toggle_splash(void);
 screen_t ui_get_current_screen(void);
 void ui_update_battery(int percent, bool charging);
 void ui_update_wifi_status(const char* ssid, int signal_strength, const char* ip, bool connected);
+void ui_tick(void);

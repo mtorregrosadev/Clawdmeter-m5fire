@@ -162,7 +162,10 @@ static void draw_log_screen(void) {
     for (int i = start_line; i < log_count && y < 220; i++) {
         const char* line = log_get_line(i);
         if (line && *line) {
-            M5.Display.drawString(line, 12, y);
+            char numbered[LOG_MESSAGE_LEN + 8];
+            int rel = i - start_line + 1;
+            snprintf(numbered, sizeof(numbered), "%02d %s", rel, line);
+            M5.Display.drawString(numbered, 12, y);
             y += 16;
         }
     }
@@ -203,6 +206,12 @@ void ui_update(const UsageData* data) {
 
 void ui_tick_anim(void) {
     // Animation tick - not needed for log screen
+}
+
+void ui_tick(void) {
+    if (current_screen == SCREEN_LOG && log_consume_dirty()) {
+        draw_log_screen();
+    }
 }
 
 void ui_show_screen(screen_t screen) {
