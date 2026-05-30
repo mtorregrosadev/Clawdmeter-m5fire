@@ -73,7 +73,7 @@ static void draw_header(const char* title) {
     set_font_title();
     M5.Display.setTextColor(color565(THEME_TEXT), color565(THEME_BG));
     M5.Display.setTextDatum(top_center);
-    M5.Display.drawString(title, 160, 10);
+    M5.Display.drawString(title, 160, 18);
     draw_battery();
 }
 

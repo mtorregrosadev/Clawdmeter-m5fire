@@ -17,9 +17,11 @@ static uint16_t color565(uint32_t hex) {
 static void draw_static_ui() {
     const auto& anim = kClawdSplashAnimation;
     M5.Display.fillScreen(color565(THEME_BG));
+    M5.Display.setFont(&fonts::FreeSerifBold18pt7b);
     M5.Display.setTextColor(color565(THEME_TEXT), color565(THEME_BG));
     M5.Display.setTextDatum(top_center);
-    M5.Display.drawString("Clawdmeter Fire", M5.Display.width() / 2, 10);
+    M5.Display.drawString("Clawdmeter Fire", M5.Display.width() / 2, 15);
+    M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextColor(color565(THEME_ACCENT), color565(THEME_BG));
     M5.Display.setTextDatum(bottom_center);
     M5.Display.drawString(anim.name, M5.Display.width() / 2, 232);
@@ -30,7 +32,7 @@ static void draw_frame(uint16_t frame_index) {
     const uint32_t frame_size = (uint32_t)anim.width * anim.height;
     const uint16_t* pixels = anim.frames + (frame_index % anim.frame_count) * frame_size;
     const int16_t x = (M5.Display.width() - anim.width) / 2;
-    const int16_t y = 24;
+    const int16_t y = 48; // Moved down from 24 to give space for title
 
     // Only redraw the animation region + margins to avoid flicker
     int16_t clear_x = x - 2;

@@ -54,9 +54,7 @@ static void poll_wifi_usage() {
     }
 
     last_poll_ms = now;
-    force_poll_at_ms = 0;  // Clear forced poll
-    Serial.println("DEBUG: Polling usage from API...");
-    http_client_debug_network();
+    force_poll_at_ms = 0;
 
     UsageData incoming = usage;
     if (http_client_fetch_usage(&incoming)) {
@@ -68,12 +66,9 @@ static void poll_wifi_usage() {
         snprintf(log_msg, sizeof(log_msg), "Updated: %d%% / %d%%",
             (int)incoming.session_pct, (int)incoming.weekly_pct);
         log_add(log_msg);
-        Serial.printf("DEBUG: Success! Session: %.1f%%, Weekly: %.1f%%\n",
-            incoming.session_pct, incoming.weekly_pct);
     } else {
         led_set(LED_RED_BLINK);
         log_add("API error: timeout/connection");
-        Serial.println("DEBUG: API polling failed - timeout or connection error");
     }
 }
 
@@ -102,6 +97,38 @@ void setup() {
     Serial.println("{\"ready\":true}");
 }
 
+static void handle_serial_screenshot() {
+    if (!Serial.available()) return;
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd != "screenshot") return;
+
+    const int W = M5.Display.width();
+    const int H = M5.Display.height();
+    const int STRIP_H = 8;
+    const size_t strip_bytes = (size_t)W * STRIP_H * 3;
+    const size_t total = (size_t)W * H * 3;
+
+    uint8_t* buf = (uint8_t*)malloc(strip_bytes);
+    if (!buf) {
+        Serial.println("SCREENSHOT_ERR");
+        return;
+    }
+
+    Serial.printf("SCREENSHOT_START %d %d %u rgb24\n", W, H, (unsigned)total);
+    Serial.flush();
+
+    for (int y = 0; y < H; y += STRIP_H) {
+        int rows = (y + STRIP_H > H) ? (H - y) : STRIP_H;
+        M5.Display.readRectRGB(0, y, W, rows, buf);
+        Serial.write(buf, (size_t)W * rows * 3);
+        Serial.flush();
+    }
+
+    Serial.println("SCREENSHOT_END");
+    free(buf);
+}
+
 void loop() {
     M5.update();
     ui_tick_anim();
@@ -113,6 +140,7 @@ void loop() {
     wifi_tick();
     http_client_tick();
     poll_wifi_usage();
+    handle_serial_screenshot();
 
     if (M5.BtnA.wasPressed()) {
         ui_toggle_splash();
@@ -135,7 +163,6 @@ void loop() {
             force_poll_at_ms = millis() + DAEMON_SCRAPE_DELAY_MS;
             led_set(LED_ORANGE);
             log_add("Manual refresh requested");
-            Serial.println("DEBUG: Button C - requesting refresh");
         }
     }
 

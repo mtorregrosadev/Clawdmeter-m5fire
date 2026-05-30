@@ -1,25 +1,28 @@
 #!/bin/bash
-# Take a screenshot from the Waveshare AMOLED display via LVGL snapshot.
+# Capture the M5Stack Fire display via serial. Size is auto-detected
+# from the SCREENSHOT_START header returned by the firmware.
 # Usage: ./screenshot.sh [output.png] [port]
 
 OUTPUT="${1:-screenshot.png}"
-PORT="${2:-/dev/ttyACM0}"
+PORT="${2:-/dev/cu.usbserial-575C0330481}"
 
 TMPRAW=$(mktemp /tmp/screenshot_XXXXXX.raw)
-trap "rm -f '$TMPRAW'" EXIT
+TMPDIM=$(mktemp /tmp/screenshot_dim_XXXXXX)
+trap "rm -f '$TMPRAW' '$TMPDIM'" EXIT
 
 echo "Taking screenshot from $PORT..."
 
-python3 - "$PORT" "$TMPRAW" << 'PYEOF'
+python3 - "$PORT" "$TMPRAW" "$TMPDIM" << 'PYEOF'
 import serial, sys
 
-port_path, raw_path = sys.argv[1], sys.argv[2]
+port_path, raw_path, dim_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
 port = serial.Serial(port_path, 115200, timeout=10)
 port.reset_input_buffer()
 port.write(b"screenshot\n")
 port.flush()
 
+w = h = raw_size = 0
 while True:
     line = port.readline().decode("utf-8", errors="replace").strip()
     if line.startswith("SCREENSHOT_START"):
@@ -40,6 +43,8 @@ while len(data) < raw_size:
 
 with open(raw_path, "wb") as f:
     f.write(data)
+with open(dim_path, "w") as f:
+    f.write(f"{w}x{h}")
 
 for _ in range(10):
     line = port.readline().decode("utf-8", errors="replace").strip()
@@ -55,12 +60,13 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-ffmpeg -y -f rawvideo -pixel_format rgb565le -video_size 480x480 \
+DIM=$(cat "$TMPDIM")
+
+ffmpeg -y -f rawvideo -pixel_format rgb24 -video_size "$DIM" \
     -i "$TMPRAW" -update 1 -frames:v 1 "$OUTPUT" 2>/dev/null || true
 
-
 if [ -f "$OUTPUT" ]; then
-    echo "Saved: $OUTPUT"
+    echo "Saved: $OUTPUT ($DIM)"
 else
     echo "Error: conversion failed"
     exit 1

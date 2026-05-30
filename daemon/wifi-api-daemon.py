@@ -3,9 +3,9 @@
 WiFi API Daemon - Scrapes Claude usage and serves via HTTP/JSON to ESP32
 Opens browser visually, maintains persistent login, updates via API
 
-Usage: ./wifi-api-daemon.py [--port 80] [--host 0.0.0.0]
+Usage: ./wifi-api-daemon.py [--port 8080] [--host 0.0.0.0]
 
-Listens on http://0.0.0.0:80/api/usage
+Listens on http://0.0.0.0:8080/api/usage
 """
 
 import json
@@ -126,21 +126,24 @@ class UsageCache:
                 session_match = re.search(r'(\d+)%\s+used', session_part)
                 s5h = int(session_match.group(1)) if session_match else 0
 
-                reset_match = re.search(r'Resets in\s+(?:(\d+)\s+d[a-z]*\s+)?(?:(\d+)\s+hr[a-z]*\s+)?(\d+)\s+min', session_part, re.IGNORECASE)
-                if reset_match:
+                # Minutes are optional — "Resets in 2 hr" is valid
+                reset_match = re.search(
+                    r'Resets in\s+(?:(\d+)\s+d[a-z]*\s+)?(?:(\d+)\s+hr[a-z]*\s+)?(?:(\d+)\s+min)?',
+                    session_part, re.IGNORECASE)
+                if reset_match and any(reset_match.groups()):
                     days = int(reset_match.group(1)) if reset_match.group(1) else 0
                     hours = int(reset_match.group(2)) if reset_match.group(2) else 0
                     mins = int(reset_match.group(3)) if reset_match.group(3) else 0
                     sr = days * 1440 + hours * 60 + mins
 
             # Find weekly % and reset time
+            # Use a fixed-length window after 'All models' instead of relying on 'Claude Design'
             s7d = 0
             wr = 10080
             all_models_idx = page_text.find('All models', weekly_idx if weekly_idx >= 0 else 0)
-            claude_design_idx = page_text.find('Claude Design')
 
-            if all_models_idx >= 0 and claude_design_idx >= all_models_idx:
-                weekly_part = page_text[all_models_idx:claude_design_idx]
+            if all_models_idx >= 0:
+                weekly_part = page_text[all_models_idx:all_models_idx + 500]
                 weekly_match = re.search(r'(\d+)%\s+used', weekly_part)
                 s7d = int(weekly_match.group(1)) if weekly_match else 0
                 wr = parse_weekly_reset_time(weekly_part)
@@ -152,6 +155,27 @@ class UsageCache:
         except Exception as e:
             logging.error(f"Scrape error: {e}")
             return False
+
+    async def _wait_for_login(self):
+        """Wait until the usage page loads (user must log in if redirected)."""
+        self.data["st"] = "waiting-login"
+        logging.info("Browser open — please log in to claude.ai/settings/usage")
+        for _ in range(60):  # up to 5 minutes
+            await self.page.wait_for_timeout(5000)
+            try:
+                page_text = await self.page.inner_text('body')
+                url = self.page.url
+            except Exception:
+                continue
+            if 'Current session' in page_text:
+                logging.info("Login detected, scraping now")
+                return True
+            if '/settings/usage' in url and 'Current session' not in page_text:
+                # On the right page but content not loaded yet — keep waiting
+                continue
+            logging.info("Waiting for login...")
+        logging.warning("Login wait timed out after 5 minutes")
+        return False
 
     async def start_browser(self):
         """Open browser with persistent storage"""
@@ -176,7 +200,16 @@ class UsageCache:
             logging.info("Waiting for page to load...")
             await self.page.wait_for_timeout(5000)
 
-            # Initial scrape
+            # Check if already logged in; if not, wait for user to log in
+            page_text = await self.page.inner_text('body')
+            if 'Current session' not in page_text:
+                logged_in = await self._wait_for_login()
+                if not logged_in:
+                    return False
+                # Navigate to usage page after login
+                await self.page.goto(USAGE_URL, timeout=15000)
+                await self.page.wait_for_timeout(3000)
+
             await self.scrape_usage()
             return True
 
@@ -194,18 +227,21 @@ class UsageCache:
                     await self.start_browser()
                     continue
 
-                # Try to click refresh button
+                # Always navigate explicitly to handle login expiry or page drift
+                logging.info("Navigating to usage page...")
                 try:
-                    refresh_button = await self.page.query_selector('button[title*="efresh"], button[aria-label*="efresh"]')
-                    if refresh_button:
-                        logging.info("Clicking refresh...")
-                        await refresh_button.click()
-                        await self.page.wait_for_timeout(1500)
-                    else:
-                        logging.info("Reloading page...")
-                        await self.page.reload(wait_until='domcontentloaded')
-                except:
-                    await self.page.reload(wait_until='domcontentloaded')
+                    await self.page.goto(USAGE_URL, wait_until='domcontentloaded', timeout=15000)
+                except Exception as e:
+                    logging.warning(f"Navigation error: {e}")
+
+                await self.page.wait_for_timeout(2000)
+
+                # Detect if we were redirected to login
+                page_text = await self.page.inner_text('body')
+                if 'Current session' not in page_text:
+                    await self._wait_for_login()
+                    await self.page.goto(USAGE_URL, timeout=15000)
+                    await self.page.wait_for_timeout(3000)
 
                 await self.scrape_usage()
 
@@ -250,7 +286,7 @@ class APIHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.end_headers()
 
     def log_message(self, format, *args):
@@ -261,7 +297,7 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 async def main():
     parser = argparse.ArgumentParser(description="WiFi API Daemon (Playwright scraper)")
-    parser.add_argument("--port", type=int, default=80, help="Port (default: 80)")
+    parser.add_argument("--port", type=int, default=8080, help="Port (default: 8080)")
     parser.add_argument("--host", default="0.0.0.0", help="Host (default: 0.0.0.0)")
     args = parser.parse_args()
 

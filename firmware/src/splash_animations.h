@@ -13,7 +13,7 @@ typedef struct {
 } splash_anim_def_t;
 
 // Simple loading spinner — rotating dot (4 frames)
-static const uint16_t splash_loading_palette[10] = {0x0000, 0xD3AA, 0xFC6C, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000};
+static const uint16_t splash_loading_palette[10] = {0x0000, 0xAADB, 0xCCFB, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000};
 
 static const uint8_t splash_loading_frames[4][400] = {
     // Frame 1: Dot at top
